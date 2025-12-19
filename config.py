@@ -78,6 +78,8 @@ class LogoConfig:
     height_mm: float = 40.0
     spacing_mm: float = 10.0
     position: str = "bottom_left"  # Position in the content area
+    margin_left_mm: float = 10.0   # Left margin from page edge
+    margin_bottom_mm: float = 10.0  # Bottom margin from page edge
 
 
 @dataclass
@@ -155,6 +157,8 @@ class Config:
                 height_mm=logos_data.get("height_mm", 40.0),
                 spacing_mm=logos_data.get("spacing_mm", 10.0),
                 position=logos_data.get("position", "bottom_left"),
+                margin_left_mm=logos_data.get("margin_left_mm", 10.0),
+                margin_bottom_mm=logos_data.get("margin_bottom_mm", 10.0),
             )
 
         return config

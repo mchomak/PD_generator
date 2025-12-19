@@ -50,11 +50,13 @@ output:
   naming_pattern: "{project_id}_{project_name}"
   output_folder: output
 
-# Logo configuration (optional)
+# Logo configuration
+# For two-component logo: place logo1.png and logo2.png in images/ folder
+# logo1.png will be at bottom, logo2.png stacked on top
+# For single logo: place logo.png in images/ folder
 logos:
-  paths:
-    # - logos/university_logo.png
-    # - logos/faculty_logo.png
-  height_mm: 40
-  spacing_mm: 10
-  position: bottom_left
+  paths: []
+  height_mm: 80           # Total height for logo area (both logos if stacked)
+  spacing_mm: 5           # Spacing between stacked logos
+  margin_left_mm: -50      # Left margin from page edge
+  margin_bottom_mm: 10    # Bottom margin from page edge

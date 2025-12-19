@@ -301,7 +301,7 @@ class PosterGenerator:
                 path.close()
                 c.clipPath(path, stroke=0, fill=0)
                 c.drawImage(str(image_path), draw_x, draw_y, scaled_width, scaled_height,
-                           preserveAspectRatio=False)
+                           preserveAspectRatio=False, mask='auto')
                 c.restoreState()
             else:
                 # Contain mode - fit within bounds
@@ -319,9 +319,10 @@ class PosterGenerator:
                 draw_y = y + (height - scaled_height) / 2
 
                 c.drawImage(str(image_path), draw_x, draw_y, scaled_width, scaled_height,
-                           preserveAspectRatio=True)
+                           preserveAspectRatio=True, mask='auto')
 
         except Exception as e:
+            logger.error(f"Failed to draw image {image_path}: {e}")
             self._add_warning(f"Failed to draw image {image_path}: {e}")
             # Draw placeholder rectangle
             c.setStrokeColor(black)
@@ -365,6 +366,35 @@ class PosterGenerator:
             except Exception as e:
                 logger.debug(f"Failed to draw logo {logo_path}: {e}")
     
+    def _find_image_by_stem(self, stem: str) -> Optional[Path]:
+        """Find an image in images_folder by filename stem (case-insensitive), with any supported extension."""
+        stem_l = stem.lower()
+
+        # Fast path: exact stem + known extensions
+        for ext in IMAGE_EXTS:
+            p = self.images_folder / f"{stem}{ext}"
+            if p.exists() and p.is_file():
+                return p
+
+        # Fallback: case-insensitive scan
+        try:
+            for p in self.images_folder.iterdir():
+                if p.is_file() and p.suffix.lower() in IMAGE_EXTS and p.stem.lower() == stem_l:
+                    return p
+        except Exception:
+            pass
+
+        return None
+
+
+    def _desired_height_fit_width(self, image_path: Path, target_width: float) -> float:
+        """Height needed to fit image to target_width keeping aspect ratio."""
+        img = Image.open(image_path)
+        w, h = img.size
+        if w <= 0:
+            return 0.0
+        return target_width * (h / w)
+
 
     def _draw_university_logo_from_images(
         self,
@@ -373,22 +403,57 @@ class PosterGenerator:
         y: float,
         max_width: float,
         max_height: float,
-    ) -> None:
+    ) -> bool:
+        """
+        Draw two-component logo: logo1.* at bottom, logo2.* stacked above.
+        Falls back to single auto-found logo.*.
+        Returns True if something was drawn.
+        """
+        spacing = self.config.logos.spacing_mm * mm
+
+        # Prefer explicit two-component logo
+        logo1_path = self._find_image_by_stem("logo1")
+        logo2_path = self._find_image_by_stem("logo2")
+
+        if logo1_path and logo2_path:
+            # Compute “natural” heights when fitting to width, then scale to fit max_height
+            h1 = self._desired_height_fit_width(logo1_path, max_width)
+            h2 = self._desired_height_fit_width(logo2_path, max_width)
+
+            # Guard rails
+            if h1 <= 0:
+                h1 = (max_height - spacing) / 2
+            if h2 <= 0:
+                h2 = (max_height - spacing) / 2
+
+            total = h1 + h2 + spacing
+            if total > max_height:
+                scale = max(0.0, (max_height - spacing) / (h1 + h2))
+                h1 *= scale
+                h2 *= scale
+
+            logo1_y = y
+            logo2_y = y + h1 + spacing
+
+            logger.info(
+                "Two-component logo: logo1=%s (y=%.1fmm, h=%.1fmm), logo2=%s (y=%.1fmm, h=%.1fmm)",
+                logo1_path.name, logo1_y / mm, h1 / mm,
+                logo2_path.name, logo2_y / mm, h2 / mm,
+            )
+
+            # Draw bottom then top
+            self._draw_image(c=c, image_path=logo1_path, x=x, y=logo1_y, width=max_width, height=h1, fit_mode="contain")
+            self._draw_image(c=c, image_path=logo2_path, x=x, y=logo2_y, width=max_width, height=h2, fit_mode="contain")
+            return True
+
+        # Fallback: single logo (auto-find, picks newest if multiple) :contentReference[oaicite:5]{index=5}
         logo_path = _auto_find_university_logo(self.images_folder)
         if not logo_path:
             logger.debug("University logo not found in images folder.")
-            return
+            return False
 
-        # Logo should never be cropped
-        self._draw_image(
-            c=c,
-            image_path=logo_path,
-            x=x,
-            y=y,
-            width=max_width,
-            height=max_height,
-            fit_mode="contain",
-        )
+        self._draw_image(c=c, image_path=logo_path, x=x, y=y, width=max_width, height=max_height, fit_mode="contain")
+        return True
 
 
     def _draw_text_block(
@@ -629,10 +694,23 @@ class PosterGenerator:
             self._add_warning(f"Team text truncated for project {project.project_id}")
 
 
-        # Draw logos in bottom-left area
-        logo_x = padding_left
-        logo_y = padding_bottom
-        self._draw_logos(c, logo_x, logo_y, logo_area_width, self.config.logos.height_mm * mm)
+        # Draw logos in bottom-left corner with configurable margins
+        logo_x = self.config.logos.margin_left_mm * mm
+        logo_y = self.config.logos.margin_bottom_mm * mm
+        logo_height = self.config.logos.height_mm * mm
+        logo_width = logo_area_width
+
+        # Priority: university logo(s) from images folder; fallback to config logos
+        drawn = self._draw_university_logo_from_images(c, logo_x, logo_y, logo_width, logo_height)
+        if not drawn:
+            self._draw_logos(c, logo_x, logo_y, logo_width, logo_height)
+
+
+        # First try config-specified logos
+        self._draw_logos(c, logo_x, logo_y, logo_width, logo_height)
+
+        # Then try auto-finding university logo from images folder
+        self._draw_university_logo_from_images(c, logo_x, logo_y, logo_width, logo_height)
 
         # Save PDF
         c.save()
