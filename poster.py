@@ -301,7 +301,7 @@ class PosterGenerator:
                 path.close()
                 c.clipPath(path, stroke=0, fill=0)
                 c.drawImage(str(image_path), draw_x, draw_y, scaled_width, scaled_height,
-                           preserveAspectRatio=False)
+                           preserveAspectRatio=False, mask='auto')
                 c.restoreState()
             else:
                 # Contain mode - fit within bounds
@@ -319,7 +319,7 @@ class PosterGenerator:
                 draw_y = y + (height - scaled_height) / 2
 
                 c.drawImage(str(image_path), draw_x, draw_y, scaled_width, scaled_height,
-                           preserveAspectRatio=True)
+                           preserveAspectRatio=True, mask='auto')
 
         except Exception as e:
             self._add_warning(f"Failed to draw image {image_path}: {e}")
