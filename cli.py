@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 PREFERRED_IMAGES_DIR_NAMES = ("images", "img", "pictures", "pics")
 
+# The app will ONLY use this exact Excel filename from the same directory as the executable
+EXPECTED_EXCEL_NAME = "project_info.xlsx"
+
 
 def _base_dir() -> Path:
     """
@@ -32,25 +35,29 @@ def _base_dir() -> Path:
 
 
 def _find_excel_file(folder: Path) -> Optional[Path]:
-    candidates = [
-        p for p in folder.glob("*.xlsx")
-        if p.is_file() and not p.name.startswith("~$")
-    ]
-    if not candidates:
+    """
+    Find the Excel file ONLY by the expected fixed name in the same directory
+    as the script/executable: project_info.xlsx
+    """
+    p = folder / EXPECTED_EXCEL_NAME
+    if not p.exists() or not p.is_file():
         return None
-    if len(candidates) == 1:
-        return candidates[0]
 
-    # If multiple, pick the most recently modified
-    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    picked = candidates[0]
-    logger.warning(
-        "Multiple .xlsx files found in %s. Using the newest: %s. Others: %s",
-        folder,
-        picked.name,
-        ", ".join(p.name for p in candidates[1:]),
-    )
-    return picked
+    # Ignore temporary/metadata files (just in case)
+    if p.name.startswith("~$") or p.name.startswith("._") or p.name.startswith("."):
+        return None
+
+    # Quick validation: .xlsx is a ZIP container (signature starts with PK\x03\x04)
+    try:
+        with p.open("rb") as f:
+            sig = f.read(4)
+        if sig != b"PK\x03\x04":
+            logger.error("Excel file '%s' exists but is not a valid .xlsx (missing ZIP signature).", p.name)
+            return None
+    except Exception as e:
+        logger.warning("Could not validate Excel file '%s': %s", p.name, e)
+
+    return p
 
 
 def _find_images_folder(folder: Path) -> Optional[Path]:
@@ -139,15 +146,15 @@ def main() -> int:
 
     excel_file = _find_excel_file(base)
     if not excel_file:
-        logger.error("No .xlsx file found in: %s", base)
-        logger.error("Put your Excel file (e.g., projects.xlsx) in the same folder as cli.py and rerun.")
+        logger.error("Excel file '%s' not found in: %s", EXPECTED_EXCEL_NAME, base)
+        logger.error("Put '%s' in the same folder as the .exe and rerun.", EXPECTED_EXCEL_NAME)
         return 1
 
     images_folder = _find_images_folder(base)
     if not images_folder:
         logger.error("Images folder not found in: %s", base)
         logger.error(
-            "Create a folder named 'images' next to cli.py (or any subfolder with .jpg/.png files) and rerun."
+            "Create a folder named 'images' next to the .exe (or any subfolder with .jpg/.png files) and rerun."
         )
         return 1
 

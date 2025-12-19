@@ -29,9 +29,9 @@ fonts:
   title_font: DejaVuSans-Bold
   title_size: 48
   heading_font: DejaVuSans-Bold
-  heading_size: 24
+  heading_size: 36
   body_font: DejaVuSans
-  body_size: 18
+  body_size: 24
   min_font_size: 10  # Minimum font size before truncation
   line_spacing: 1.2
 
