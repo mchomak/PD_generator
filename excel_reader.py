@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openpyxl import load_workbook
 
-from .config import ColumnMapping
+from config import ColumnMapping
 
 logger = logging.getLogger(__name__)
 

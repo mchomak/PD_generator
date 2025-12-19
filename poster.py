@@ -12,26 +12,11 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
-from .config import Config
-from .excel_reader import ProjectData
-from .text_utils import fit_text_to_box, format_output_filename
+from config import Config
+from excel_reader import ProjectData
+from text_utils import fit_text_to_box, format_output_filename
 
 logger = logging.getLogger(__name__)
-
-# Standard font directories for different platforms
-FONT_SEARCH_PATHS = [
-    # Windows
-    Path("C:/Windows/Fonts"),
-    # Linux
-    Path("/usr/share/fonts"),
-    Path("/usr/local/share/fonts"),
-    Path(os.path.expanduser("~/.fonts")),
-    Path(os.path.expanduser("~/.local/share/fonts")),
-    # macOS
-    Path("/Library/Fonts"),
-    Path("/System/Library/Fonts"),
-    Path(os.path.expanduser("~/Library/Fonts")),
-]
 
 # DejaVu font files (support Cyrillic)
 DEJAVU_FONTS = {
@@ -43,28 +28,121 @@ DEJAVU_FONTS = {
     "DejaVuSerif-Bold": "DejaVuSerif-Bold.ttf",
 }
 
+# Local fonts folder (recommended to bundle fonts with the project)
+LOCAL_FONTS_DIR = Path(__file__).resolve().parent / "fonts"
+
+# ReportLab base14 fonts (do NOT support Cyrillic reliably)
+BASE14_FONTS = {
+    "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
+    "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
+    "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
+    "Symbol", "ZapfDingbats",
+}
+
+# Common system fonts on Windows that support Cyrillic
+SYSTEM_CYRILLIC_FONTS = {
+    "Arial": "arial.ttf",
+    "Arial-Bold": "arialbd.ttf",
+    "Arial-Italic": "ariali.ttf",
+    "Arial-BoldItalic": "arialbi.ttf",
+    "Calibri": "calibri.ttf",
+    "Calibri-Bold": "calibrib.ttf",
+    "TimesNewRoman": "times.ttf",
+    "TimesNewRoman-Bold": "timesbd.ttf",
+    "TimesNewRoman-Italic": "timesi.ttf",
+    "TimesNewRoman-BoldItalic": "timesbi.ttf",
+}
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp")
+
+FONT_SEARCH_PATHS = [
+    # Project-local fonts (bundle here)
+    LOCAL_FONTS_DIR,
+
+    # Windows
+    Path("C:/Windows/Fonts"),
+
+    # Linux
+    Path("/usr/share/fonts"),
+    Path("/usr/local/share/fonts"),
+    Path(os.path.expanduser("~/.fonts")),
+    Path(os.path.expanduser("~/.local/share/fonts")),
+
+    # macOS
+    Path("/Library/Fonts"),
+    Path("/System/Library/Fonts"),
+    Path(os.path.expanduser("~/Library/Fonts")),
+]
+
+
+def _auto_find_university_logo(images_folder: Path) -> Optional[Path]:
+    """
+    Find a university logo file inside images folder (or its common subfolders).
+    Put a single logo image (with university name inside it) into images/.
+    Recommended filename: logo.png
+    """
+    search_dirs = [
+        images_folder,
+        images_folder / "logos",
+        images_folder / "logo",
+    ]
+
+    patterns = [
+        "logo.*",
+        "*logo*.*",
+        "*логотип*.*",
+        "*polytech*.*",
+        "*политех*.*",
+        "*mospolytech*.*",
+    ]
+
+    found: List[Path] = []
+    for d in search_dirs:
+        if not d.exists() or not d.is_dir():
+            continue
+        for pat in patterns:
+            found.extend([p for p in d.glob(pat) if p.is_file() and p.suffix.lower() in IMAGE_EXTS])
+
+    if not found:
+        return None
+
+    # If multiple — use newest file
+    found.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return found[0]
+
 
 def _find_font_file(font_filename: str) -> Optional[Path]:
-    """Search for a font file in standard locations."""
+    """Search for a font file in standard locations (case-insensitive)."""
+    target = font_filename.lower()
+
     for search_path in FONT_SEARCH_PATHS:
         if not search_path.exists():
             continue
 
-        # Search recursively
+        # Fast path (works well on Windows)
         for font_path in search_path.rglob(font_filename):
             if font_path.is_file():
                 return font_path
 
+        # Fallback: case-insensitive scan
+        for font_path in search_path.rglob("*.ttf"):
+            if font_path.is_file() and font_path.name.lower() == target:
+                return font_path
+
     return None
+
 
 
 def _register_fonts() -> bool:
     """Register fonts with ReportLab, return True if successful."""
     registered_any = False
 
-    for font_name, font_filename in DEJAVU_FONTS.items():
+    all_fonts = {}
+    all_fonts.update(DEJAVU_FONTS)
+    all_fonts.update(SYSTEM_CYRILLIC_FONTS)
+
+    for font_name, font_filename in all_fonts.items():
         try:
-            # Check if already registered
             pdfmetrics.getFont(font_name)
             registered_any = True
             continue
@@ -72,37 +150,73 @@ def _register_fonts() -> bool:
             pass
 
         font_path = _find_font_file(font_filename)
-        if font_path:
-            try:
-                pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
-                logger.debug(f"Registered font: {font_name} from {font_path}")
-                registered_any = True
-            except Exception as e:
-                logger.warning(f"Failed to register font {font_name}: {e}")
+        if not font_path:
+            continue
+
+        try:
+            pdfmetrics.registerFont(TTFont(font_name, str(font_path)))
+            logger.debug("Registered font: %s from %s", font_name, font_path)
+            registered_any = True
+        except Exception as e:
+            logger.warning("Failed to register font %s (%s): %s", font_name, font_path, e)
 
     return registered_any
+
 
 
 def _ensure_fonts_available(config: Config) -> Tuple[str, str, str]:
     """
     Ensure required fonts are available, return actual font names to use.
-
-    Returns:
-        Tuple of (title_font, heading_font, body_font)
+    Prefer Unicode TTF fonts that support Cyrillic.
     """
     _register_fonts()
 
-    # Try configured fonts first, fall back to Helvetica
-    fonts = []
-    for font_name in [config.fonts.title_font, config.fonts.heading_font, config.fonts.body_font]:
+    def _has_font(name: str) -> bool:
         try:
-            pdfmetrics.getFont(font_name)
-            fonts.append(font_name)
+            pdfmetrics.getFont(name)
+            return True
         except KeyError:
-            logger.warning(f"Font '{font_name}' not available, using Helvetica")
-            fonts.append("Helvetica")
+            return False
 
-    return tuple(fonts)
+    def _pick(preferred: List[str]) -> str:
+        for name in preferred:
+            if _has_font(name):
+                return name
+        return "Helvetica"  # last resort
+
+    # If config fonts are base14, prefer Unicode fonts instead (Cyrillic-safe)
+    cfg_title = config.fonts.title_font
+    cfg_heading = config.fonts.heading_font
+    cfg_body = config.fonts.body_font
+
+    title_candidates = []
+    heading_candidates = []
+    body_candidates = []
+
+    if cfg_title and cfg_title not in BASE14_FONTS:
+        title_candidates.append(cfg_title)
+    if cfg_heading and cfg_heading not in BASE14_FONTS:
+        heading_candidates.append(cfg_heading)
+    if cfg_body and cfg_body not in BASE14_FONTS:
+        body_candidates.append(cfg_body)
+
+    # Strong defaults for Cyrillic
+    title_candidates += ["DejaVuSans-Bold", "Arial-Bold", "Calibri-Bold", "TimesNewRoman-Bold"]
+    heading_candidates += ["DejaVuSans-Bold", "Arial-Bold", "Calibri-Bold", "TimesNewRoman-Bold"]
+    body_candidates += ["DejaVuSans", "Arial", "Calibri", "TimesNewRoman"]
+
+    # Absolute fallback (will show squares on Cyrillic, but better than crash)
+    title_candidates += ["Helvetica-Bold"]
+    heading_candidates += ["Helvetica-Bold"]
+    body_candidates += ["Helvetica"]
+
+    title_font = _pick(title_candidates)
+    heading_font = _pick(heading_candidates)
+    body_font = _pick(body_candidates)
+
+    logger.info("Fonts selected: title=%s, heading=%s, body=%s", title_font, heading_font, body_font)
+    return title_font, heading_font, body_font
+
 
 
 class PosterGenerator:
@@ -250,6 +364,32 @@ class PosterGenerator:
 
             except Exception as e:
                 logger.debug(f"Failed to draw logo {logo_path}: {e}")
+    
+
+    def _draw_university_logo_from_images(
+        self,
+        c: canvas.Canvas,
+        x: float,
+        y: float,
+        max_width: float,
+        max_height: float,
+    ) -> None:
+        logo_path = _auto_find_university_logo(self.images_folder)
+        if not logo_path:
+            logger.debug("University logo not found in images folder.")
+            return
+
+        # Logo should never be cropped
+        self._draw_image(
+            c=c,
+            image_path=logo_path,
+            x=x,
+            y=y,
+            width=max_width,
+            height=max_height,
+            fit_mode="contain",
+        )
+
 
     def _draw_text_block(
         self,
@@ -305,7 +445,7 @@ class PosterGenerator:
             max_width,
             max_height,
             font_name,
-            font_size,
+            # font_size,
             min_font_size,
             line_spacing,
         )
@@ -385,18 +525,49 @@ class PosterGenerator:
             c.drawCentredString(page_width / 2, image_y + image_height / 2, no_image_text)
 
         # Draw project title (centered in content area)
-        title_y_offset = self.config.layout.title_y_offset_mm * mm
-        title_y = image_y - title_y_offset
-        c.setFont(self.title_font, self.config.fonts.title_size)
-        c.setFillColor(black)
+        # Inner top of the bottom content area
+        content_top_y = image_y - padding_top
 
-        if self.config.layout.title_centered:
-            c.drawCentredString(page_width / 2, title_y, project.project_name)
-        else:
-            c.drawString(padding_left, title_y, project.project_name)
+        # Left column geometry (same as logo area width)
+        left_x = padding_left
+        left_width = logo_area_width  # already calculated above
+
+        # --- Left header block: "Проект" + bold project name ---
+        label = "Проект"
+        label_size = self.config.fonts.heading_size
+        label_gap = 4 * mm
+
+        c.setFillColor(black)
+        c.setFont(self.heading_font, label_size)
+        c.drawString(left_x, content_top_y - label_size, label)
+
+        # Project name under the label (bold, may wrap)
+        title_box_top = content_top_y - (label_size * 1.6) - label_gap
+        title_box_height = 65 * mm  # enough for 1–2 lines like in your photo
+
+        name_lines, name_size, name_truncated = fit_text_to_box(
+            project.project_name,
+            max_width=left_width,
+            max_height=title_box_height,
+            font_name=self.title_font,
+            # font_size=self.config.fonts.title_size,
+            min_font_size=self.config.fonts.min_font_size,
+            line_spacing=self.config.fonts.line_spacing,
+        )
+
+        c.setFont(self.title_font, name_size)
+        line_h = name_size * self.config.fonts.line_spacing
+
+        cur_y = title_box_top - name_size
+        for line in name_lines[:3]:  # hard safety limit
+            c.drawString(left_x, cur_y, line)
+            cur_y -= line_h
+
+        if name_truncated:
+            self._add_warning(f"Project name truncated for project {project.project_id}")
 
         # Calculate text areas
-        text_start_y = title_y - self.config.fonts.title_size * 1.5
+        text_start_y = content_top_y
         text_area_height = text_start_y - padding_bottom
         text_x = page_width - padding_right - text_column_width
 
@@ -406,9 +577,9 @@ class PosterGenerator:
         # Draw text sections
         current_y = text_start_y
         sections = [
-            ("PROBLEM", project.problem),
-            ("SOLUTION", project.solution),
-            ("PRODUCT", project.product),
+            ("Проблема", project.problem),
+            ("Решение", project.solution),
+            ("Продукт", project.product),
         ]
 
         for heading, content in sections:
@@ -428,16 +599,35 @@ class PosterGenerator:
             current_y -= height_used + 15 * mm
 
         # Draw team info at the bottom of text column
-        team_y = padding_bottom + 30 * mm
-        c.setFont(self.heading_font, self.config.fonts.heading_size)
-        c.drawString(text_x, team_y + self.config.fonts.heading_size, "TEAM")
-        c.setFont(self.body_font, self.config.fonts.body_size - 2)
+        team_block_height = 70 * mm
+        team_top = padding_bottom + team_block_height
 
-        team_lines = project.team.split("\n") if project.team else []
-        team_line_y = team_y
-        for line in team_lines[:5]:  # Limit to 5 lines
-            c.drawString(text_x, team_line_y, line.strip())
-            team_line_y -= self.config.fonts.body_size * 1.2
+        c.setFont(self.heading_font, self.config.fonts.heading_size)
+        c.drawString(text_x, team_top - self.config.fonts.heading_size, "Команда")
+
+        team_text_top = team_top - (self.config.fonts.heading_size * 1.8)
+        team_max_height = team_text_top - padding_bottom
+
+        team_lines, team_size, team_truncated = fit_text_to_box(
+            project.team or "",
+            max_width=text_column_width,
+            max_height=team_max_height,
+            font_name=self.body_font,
+            # font_size=max(self.config.fonts.body_size - 2, self.config.fonts.min_font_size),
+            min_font_size=self.config.fonts.min_font_size,
+            line_spacing=self.config.fonts.line_spacing,
+        )
+
+        c.setFont(self.body_font, team_size)
+        cur_y = team_text_top - team_size
+        line_h = team_size * self.config.fonts.line_spacing
+        for line in team_lines:
+            c.drawString(text_x, cur_y, line)
+            cur_y -= line_h
+
+        if team_truncated:
+            self._add_warning(f"Team text truncated for project {project.project_id}")
+
 
         # Draw logos in bottom-left area
         logo_x = padding_left
@@ -472,7 +662,7 @@ def generate_all_posters(
         Success list: [(project_id, output_path), ...]
         Failure list: [(project_id, error_message), ...]
     """
-    from .excel_reader import find_project_image
+    from excel_reader import find_project_image
 
     generator = PosterGenerator(config, images_folder, output_folder)
 
