@@ -322,6 +322,7 @@ class PosterGenerator:
                            preserveAspectRatio=True, mask='auto')
 
         except Exception as e:
+            logger.error(f"Failed to draw image {image_path}: {e}")
             self._add_warning(f"Failed to draw image {image_path}: {e}")
             # Draw placeholder rectangle
             c.setStrokeColor(black)
@@ -389,23 +390,26 @@ class PosterGenerator:
             # Each logo gets half the height minus spacing
             single_height = (max_height - spacing) / 2
 
+            logger.info(f"Drawing two-component logo: logo1 at y={y}, logo2 at y={y + single_height + spacing}")
+            logger.info(f"Logo heights: single_height={single_height}, spacing={spacing}, max_height={max_height}")
+
+            # Draw logo2 on top first (so logo1 draws on top if there's any overlap issue)
+            self._draw_image(
+                c=c,
+                image_path=logo2_path,
+                x=x,
+                y=y + single_height + spacing,
+                width=max_width,
+                height=single_height,
+                fit_mode="contain",
+            )
+
             # Draw logo1 at bottom
             self._draw_image(
                 c=c,
                 image_path=logo1_path,
                 x=x,
                 y=y,
-                width=max_width,
-                height=single_height,
-                fit_mode="contain",
-            )
-
-            # Draw logo2 on top of logo1
-            self._draw_image(
-                c=c,
-                image_path=logo2_path,
-                x=x,
-                y=y + single_height + spacing,
                 width=max_width,
                 height=single_height,
                 fit_mode="contain",
