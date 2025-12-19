@@ -374,12 +374,50 @@ class PosterGenerator:
         max_width: float,
         max_height: float,
     ) -> None:
+        """
+        Draw two-component logo: logo1.png at bottom, logo2.png stacked on top.
+        Falls back to single logo.png if logo1/logo2 not found.
+        """
+        spacing = self.config.logos.spacing_mm * mm
+
+        # Try to find logo1.png and logo2.png for two-component logo
+        logo1_path = self.images_folder / "logo1.png"
+        logo2_path = self.images_folder / "logo2.png"
+
+        if logo1_path.exists() and logo2_path.exists():
+            # Two-component logo: stack vertically
+            # Each logo gets half the height minus spacing
+            single_height = (max_height - spacing) / 2
+
+            # Draw logo1 at bottom
+            self._draw_image(
+                c=c,
+                image_path=logo1_path,
+                x=x,
+                y=y,
+                width=max_width,
+                height=single_height,
+                fit_mode="contain",
+            )
+
+            # Draw logo2 on top of logo1
+            self._draw_image(
+                c=c,
+                image_path=logo2_path,
+                x=x,
+                y=y + single_height + spacing,
+                width=max_width,
+                height=single_height,
+                fit_mode="contain",
+            )
+            return
+
+        # Fallback: single logo (auto-find)
         logo_path = _auto_find_university_logo(self.images_folder)
         if not logo_path:
             logger.debug("University logo not found in images folder.")
             return
 
-        # Logo should never be cropped
         self._draw_image(
             c=c,
             image_path=logo_path,
@@ -629,16 +667,17 @@ class PosterGenerator:
             self._add_warning(f"Team text truncated for project {project.project_id}")
 
 
-        # Draw logos in bottom-left area
-        logo_x = padding_left
-        logo_y = padding_bottom
+        # Draw logos in bottom-left corner with configurable margins
+        logo_x = self.config.logos.margin_left_mm * mm
+        logo_y = self.config.logos.margin_bottom_mm * mm
         logo_height = self.config.logos.height_mm * mm
+        logo_width = logo_area_width  # or set a specific width if needed
 
         # First try config-specified logos
-        self._draw_logos(c, logo_x, logo_y, logo_area_width, logo_height)
+        self._draw_logos(c, logo_x, logo_y, logo_width, logo_height)
 
         # Then try auto-finding university logo from images folder
-        self._draw_university_logo_from_images(c, logo_x, logo_y, logo_area_width, logo_height)
+        self._draw_university_logo_from_images(c, logo_x, logo_y, logo_width, logo_height)
 
         # Save PDF
         c.save()
