@@ -1,0 +1,60 @@
+# PD Generator Configuration
+
+# Page dimensions (A1 portrait)
+page:
+  width_mm: 594
+  height_mm: 841  # Use 840 if needed for your printer
+
+# Layout configuration
+layout:
+  # Top image area
+  image_height_mm: 434
+  image_fit_mode: cover  # "cover" (fill, may crop) or "contain" (fit, may have margins)
+
+  # Bottom content area padding
+  content_padding_left_mm: 40
+  content_padding_right_mm: 40
+  content_padding_top_mm: 20
+  content_padding_bottom_mm: 20
+
+  # Text column (bottom right area)
+  text_column_width_mm: 225
+
+  # Title positioning
+  title_y_offset_mm: 50  # Distance from top of content area
+  title_centered: true
+
+# Font configuration
+fonts:
+  title_font: DejaVuSans-Bold
+  title_size: 48
+  heading_font: DejaVuSans-Bold
+  heading_size: 24
+  body_font: DejaVuSans
+  body_size: 18
+  min_font_size: 10  # Minimum font size before truncation
+  line_spacing: 1.2
+
+# Excel column mapping
+columns:
+  project_id: project_id
+  project_name: project_name
+  problem: problem
+  solution: solution
+  product: product
+  team: team
+  image_filename: image_filename  # Optional: if not present, uses project_id to find image
+
+# Output configuration
+output:
+  naming_pattern: "{project_id}_{project_name}"
+  output_folder: output
+
+# Logo configuration (optional)
+logos:
+  paths:
+    # - logos/university_logo.png
+    # - logos/faculty_logo.png
+  height_mm: 40
+  spacing_mm: 10
+  position: bottom_left
