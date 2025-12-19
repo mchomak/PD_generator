@@ -632,7 +632,13 @@ class PosterGenerator:
         # Draw logos in bottom-left area
         logo_x = padding_left
         logo_y = padding_bottom
-        self._draw_logos(c, logo_x, logo_y, logo_area_width, self.config.logos.height_mm * mm)
+        logo_height = self.config.logos.height_mm * mm
+
+        # First try config-specified logos
+        self._draw_logos(c, logo_x, logo_y, logo_area_width, logo_height)
+
+        # Then try auto-finding university logo from images folder
+        self._draw_university_logo_from_images(c, logo_x, logo_y, logo_area_width, logo_height)
 
         # Save PDF
         c.save()
