@@ -445,7 +445,7 @@ class PosterGenerator:
             max_width,
             max_height,
             font_name,
-            # font_size,
+            font_size,
             min_font_size,
             line_spacing,
         )
@@ -550,7 +550,7 @@ class PosterGenerator:
             max_width=left_width,
             max_height=title_box_height,
             font_name=self.title_font,
-            # font_size=self.config.fonts.title_size,
+            initial_font_size=self.config.fonts.title_size,
             min_font_size=self.config.fonts.min_font_size,
             line_spacing=self.config.fonts.line_spacing,
         )
@@ -613,7 +613,7 @@ class PosterGenerator:
             max_width=text_column_width,
             max_height=team_max_height,
             font_name=self.body_font,
-            # font_size=max(self.config.fonts.body_size - 2, self.config.fonts.min_font_size),
+            initial_font_size=max(self.config.fonts.body_size - 2, self.config.fonts.min_font_size),
             min_font_size=self.config.fonts.min_font_size,
             line_spacing=self.config.fonts.line_spacing,
         )
