@@ -387,31 +387,42 @@ class PosterGenerator:
 
         if logo1_path.exists() and logo2_path.exists():
             # Two-component logo: stack vertically
-            # Each logo gets half the height minus spacing
-            single_height = (max_height - spacing) / 2
+            # logo1 at bottom, logo2 above it
+            logo1_height = (max_height - spacing) / 2
+            logo2_height = (max_height - spacing) / 2
 
-            logger.info(f"Drawing two-component logo: logo1 at y={y}, logo2 at y={y + single_height + spacing}")
-            logger.info(f"Logo heights: single_height={single_height}, spacing={spacing}, max_height={max_height}")
+            # Position calculations
+            logo1_y = y  # logo1 at bottom
+            logo2_y = y + logo1_height + spacing  # logo2 above logo1
 
-            # Draw logo2 on top first (so logo1 draws on top if there's any overlap issue)
-            self._draw_image(
-                c=c,
-                image_path=logo2_path,
-                x=x,
-                y=y + single_height + spacing,
-                width=max_width,
-                height=single_height,
-                fit_mode="contain",
-            )
+            logger.info(f"Two-component logo: logo1 at y={logo1_y/mm:.1f}mm (height={logo1_height/mm:.1f}mm)")
+            logger.info(f"Two-component logo: logo2 at y={logo2_y/mm:.1f}mm (height={logo2_height/mm:.1f}mm)")
 
-            # Draw logo1 at bottom
+            # DEBUG: Draw colored borders around logo areas to visualize positioning
+            # c.setStrokeColorRGB(1, 0, 0)  # Red for logo1 area
+            # c.rect(x, logo1_y, max_width, logo1_height, fill=0, stroke=1)
+            # c.setStrokeColorRGB(0, 0, 1)  # Blue for logo2 area
+            # c.rect(x, logo2_y, max_width, logo2_height, fill=0, stroke=1)
+
+            # Draw logo1 at bottom FIRST
             self._draw_image(
                 c=c,
                 image_path=logo1_path,
                 x=x,
-                y=y,
+                y=logo1_y,
                 width=max_width,
-                height=single_height,
+                height=logo1_height,
+                fit_mode="contain",
+            )
+
+            # Draw logo2 above logo1
+            self._draw_image(
+                c=c,
+                image_path=logo2_path,
+                x=x,
+                y=logo2_y,
+                width=max_width,
+                height=logo2_height,
                 fit_mode="contain",
             )
             return
